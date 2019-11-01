@@ -76,18 +76,21 @@ def main():
     # Data
     print(f'==> Preparing cifar10')
     transform_train = transforms.Compose([
-        dataset.RandomPadandCrop(32),
-        dataset.RandomFlip(),
-        dataset.ToTensor(),
+        transforms.RandomHorizontalFlip(),
+        transforms.Pad(padding=4, padding_mode='reflect'),
+        transforms.RandomCrop(size=32),
+        transforms.ToTensor(),
+        transforms.Normalize(dataset.cifar10_mean, dataset.cifar10_std)
     ])
 
     transform_val = transforms.Compose([
-        dataset.ToTensor(),
+        transforms.ToTensor(),
+        transforms.Normalize(dataset.cifar10_mean, dataset.cifar10_std)
     ])
 
     train_labeled_set, train_unlabeled_set, val_set, test_set = dataset.get_cifar10('./data', args.n_labeled, transform_train=transform_train, transform_val=transform_val)
-    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
-    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+    labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=2, drop_last=True)
+    unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=2, drop_last=True)
     val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
@@ -157,7 +160,7 @@ def main():
         writer.add_scalar('accuracy/train_acc', train_acc, step)
         writer.add_scalar('accuracy/val_acc', val_acc, step)
         writer.add_scalar('accuracy/test_acc', test_acc, step)
-        
+
         # scheduler.step()
 
         # append logger file
@@ -199,7 +202,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
     labeled_train_iter = iter(labeled_trainloader)
     unlabeled_train_iter = iter(unlabeled_trainloader)
 
-    
+
     model.train()
     for batch_idx in range(args.val_iteration):
         try:
@@ -253,7 +256,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         mixed_input = l * input_a + (1 - l) * input_b
         mixed_target = l * target_a + (1 - l) * target_b
 
-        # interleave labeled and unlabed samples between batches to get correct batchnorm calculation 
+        # interleave labeled and unlabed samples between batches to get correct batchnorm calculation
         mixed_input = list(torch.split(mixed_input, batch_size))
         mixed_input = interleave(mixed_input, batch_size)
 
@@ -287,17 +290,12 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f} | W: {w:.4f}'.format(
+        bar.suffix  = '({batch}/{size}) Batch: {bt:.3f}s | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f}'.format(
                     batch=batch_idx + 1,
                     size=args.val_iteration,
-                    data=data_time.avg,
                     bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
                     loss_x=losses_x.avg,
                     loss_u=losses_u.avg,
-                    w=ws.avg,
                     )
         bar.next()
     bar.finish()
@@ -326,7 +324,7 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
 
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda(non_blocking=True)
-            
+
             # compute output
             outputs = model(inputs)
             loss = criterion(outputs, targets)
@@ -342,13 +340,9 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
             end = time.time()
 
             # plot progress
-            bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            bar.suffix  = '({batch}/{size})  Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
                         batch=batch_idx + 1,
                         size=len(valloader),
-                        data=data_time.avg,
-                        bt=batch_time.avg,
-                        total=bar.elapsed_td,
-                        eta=bar.eta_td,
                         loss=losses.avg,
                         top1=top1.avg,
                         top5=top5.avg,
